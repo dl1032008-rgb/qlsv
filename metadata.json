@@ -1,0 +1,8 @@
+{
+  "name": "Hệ thống Quản lý Sinh viên Điện tử - Khoa Công nghệ Ô tô",
+  "description": "Phần mềm quản trị học sinh sinh viên, quản lý điểm, điểm danh chuyên cần, điểm rèn luyện, học bổng KKHN và chính sách miễn giảm học phí NĐ 238/2025/NĐ-CP",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "entities": {
+    "Class": {
+      "title": "Class",
+      "description": "Information about a class",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "academicYear": { "type": "string" },
+        "major": { "type": "string" },
+        "trainingSystem": { "type": "string" },
+        "headTeacher": { "type": "string" },
+        "studentCount": { "type": "number" }
+      },
+      "required": ["id", "name"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Student profile",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fullName": { "type": "string" },
+        "classId": { "type": "string" }
+      },
+      "required": ["id", "fullName", "classId"]
+    }
+  },
+  "firestore": {
+    "classes": {
+      "schema": "Class",
+      "description": "Collection of classes"
+    },
+    "students": {
+      "schema": "Student",
+      "description": "Collection of students"
+    }
+  }
+}

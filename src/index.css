@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+@media print {
+  header, footer, aside, button, .no-print {
+    display: none !important;
+  }
+  body, main {
+    background: white !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+  .printable-document {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+  }
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+  .printable-monthly-sheet {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    font-size: 10px !important;
+  }
+  .printable-monthly-sheet table {
+    width: 100% !important;
+    page-break-inside: auto !important;
+  }
+  .printable-monthly-sheet tr {
+    page-break-inside: avoid !important;
+  }
+}
+
+/* Smooth custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
