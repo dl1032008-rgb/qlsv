@@ -13,7 +13,8 @@ import {
   RenLuyenCriteria, 
   FundTransaction, 
   WorkshopSafetyLog, 
-  UnitInfoSettings 
+  UnitInfoSettings,
+  AutoSyncInfo 
 } from './types';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -36,15 +37,32 @@ import { UserManagementModal } from './components/UserManagementModal';
 import { CurriculumFrameworkModal } from './components/CurriculumFrameworkModal';
 import { QuickToolsModal } from './components/QuickToolsModal';
 import { DriveSyncModal } from './components/DriveSyncModal';
+import { PublishGuideModal } from './components/PublishGuideModal';
 import { ParsedImportData } from './services/dataImportService';
 import { DEFAULT_THEME_SETTINGS, DEFAULT_UNIT_INFO_SETTINGS } from './types';
 import { INITIAL_CLASSES, INITIAL_MODULES, INITIAL_STUDENTS, INITIAL_GRADES, INITIAL_ATTENDANCE, INITIAL_REN_LUYEN, INITIAL_FUND_TRANSACTIONS, INITIAL_WORKSHOP_LOGS } from './data/mockData';
 import { safeLocalStorage } from './utils/storage';
+import { getMediaFromIndexedDB, saveMediaToIndexedDB, deleteMediaFromIndexedDB } from './utils/mediaStorage';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
-  const [academicYear, setAcademicYear] = useState<AcademicYear>('2025 - 2028');
-  const [currentClass, setCurrentClass] = useState<ClassId>('CĐK19.2-OT1.CLC');
+  const [academicYear, setAcademicYear] = useState<AcademicYear>(() => {
+    const saved = safeLocalStorage.get('oto_academic_year');
+    return (saved as AcademicYear) || '2025 - 2028';
+  });
+
+  const [currentClass, setCurrentClass] = useState<ClassId>(() => {
+    const saved = safeLocalStorage.get('oto_current_class');
+    return (saved as ClassId) || 'CĐK19.2-OT1.CLC';
+  });
+
+  useEffect(() => {
+    safeLocalStorage.set('oto_academic_year', academicYear);
+  }, [academicYear]);
+
+  useEffect(() => {
+    safeLocalStorage.set('oto_current_class', currentClass);
+  }, [currentClass]);
   
   const [themeSettings, setThemeSettings] = useState<ThemeSettings>(() => {
     try {
@@ -59,15 +77,82 @@ export default function App() {
     return DEFAULT_THEME_SETTINGS;
   });
 
+  // Khôi phục đồng bộ logo và ảnh banner từ IndexedDB để không bao giờ bị mất khi tải lại trang
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const [savedLogo, savedBanner] = await Promise.all([
+          getMediaFromIndexedDB('theme_logo'),
+          getMediaFromIndexedDB('theme_banner')
+        ]);
+        if (!isMounted) return;
+
+        let needsUpdate = false;
+        let nextLogo = themeSettings.logoUrl;
+        let nextBanner = themeSettings.bannerUrl;
+
+        if (savedLogo && savedLogo !== themeSettings.logoUrl) {
+          nextLogo = savedLogo;
+          needsUpdate = true;
+        }
+        if (savedBanner && savedBanner !== themeSettings.bannerUrl) {
+          nextBanner = savedBanner;
+          needsUpdate = true;
+        }
+
+        if (needsUpdate) {
+          setThemeSettings(prev => ({
+            ...prev,
+            logoUrl: nextLogo || prev.logoUrl,
+            bannerUrl: nextBanner || prev.bannerUrl
+          }));
+        }
+      } catch (err) {
+        console.warn('IndexedDB media restore error:', err);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, []);
+
   useEffect(() => {
     try {
       safeLocalStorage.set('oto_app_theme_settings', JSON.stringify(themeSettings));
     } catch (e) {
-      console.warn('LocalStorage quota exceeded when saving theme settings:', e);
+      console.warn('LocalStorage quota warning when saving theme settings:', e);
+    }
+
+    // Luôn bảo lưu media vào IndexedDB
+    if (themeSettings.logoUrl) {
+      saveMediaToIndexedDB('theme_logo', themeSettings.logoUrl);
+    } else {
+      deleteMediaFromIndexedDB('theme_logo');
+    }
+
+    if (themeSettings.bannerUrl) {
+      saveMediaToIndexedDB('theme_banner', themeSettings.bannerUrl);
+    } else {
+      deleteMediaFromIndexedDB('theme_banner');
     }
   }, [themeSettings]);
 
-  const [unitSettings, setUnitSettings] = useState<UnitInfoSettings>(DEFAULT_UNIT_INFO_SETTINGS);
+  const [unitSettings, setUnitSettings] = useState<UnitInfoSettings>(() => {
+    const saved = safeLocalStorage.get('oto_unit_info_settings');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') return parsed;
+      } catch (e) {
+        console.error('Error loading unit info from storage:', e);
+      }
+    }
+    return DEFAULT_UNIT_INFO_SETTINGS;
+  });
+
+  useEffect(() => {
+    safeLocalStorage.set('oto_unit_info_settings', JSON.stringify(unitSettings));
+  }, [unitSettings]);
+
   const [classes, setClasses] = useState<ClassItem[]>(() => {
     const saved = safeLocalStorage.get('oto_classes_list');
     if (saved) {
@@ -101,13 +186,262 @@ export default function App() {
   useEffect(() => {
     safeLocalStorage.set('oto_classes_list', JSON.stringify(classes));
   }, [classes]);
-  const [modules, setModules] = useState<SubjectModule[]>(INITIAL_MODULES);
-  const [grades, setGrades] = useState<StudentGrade[]>(INITIAL_GRADES);
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>(INITIAL_ATTENDANCE);
-  const [renLuyen, setRenLuyen] = useState<RenLuyenCriteria[]>(INITIAL_REN_LUYEN);
-  const [fundTransactions, setFundTransactions] = useState<FundTransaction[]>(INITIAL_FUND_TRANSACTIONS);
-  const [workshopLogs, setWorkshopLogs] = useState<WorkshopSafetyLog[]>(INITIAL_WORKSHOP_LOGS);
+
+  const [modules, setModules] = useState<SubjectModule[]>(() => {
+    const saved = safeLocalStorage.get('oto_modules_list');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {
+        console.error('Error loading modules from storage:', e);
+      }
+    }
+    return INITIAL_MODULES;
+  });
+
+  useEffect(() => {
+    safeLocalStorage.set('oto_modules_list', JSON.stringify(modules));
+  }, [modules]);
+
+  const [grades, setGrades] = useState<StudentGrade[]>(() => {
+    const saved = safeLocalStorage.get('oto_grades_list');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {
+        console.error('Error loading grades from storage:', e);
+      }
+    }
+    return INITIAL_GRADES;
+  });
+
+  useEffect(() => {
+    safeLocalStorage.set('oto_grades_list', JSON.stringify(grades));
+  }, [grades]);
+
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>(() => {
+    const saved = safeLocalStorage.get('oto_attendance_list');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {
+        console.error('Error loading attendance from storage:', e);
+      }
+    }
+    return INITIAL_ATTENDANCE;
+  });
+
+  useEffect(() => {
+    safeLocalStorage.set('oto_attendance_list', JSON.stringify(attendance));
+  }, [attendance]);
+
+  const [renLuyen, setRenLuyen] = useState<RenLuyenCriteria[]>(() => {
+    const saved = safeLocalStorage.get('oto_ren_luyen_list');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {
+        console.error('Error loading ren luyen from storage:', e);
+      }
+    }
+    return INITIAL_REN_LUYEN;
+  });
+
+  useEffect(() => {
+    safeLocalStorage.set('oto_ren_luyen_list', JSON.stringify(renLuyen));
+  }, [renLuyen]);
+
+  const [fundTransactions, setFundTransactions] = useState<FundTransaction[]>(() => {
+    const saved = safeLocalStorage.get('oto_fund_transactions');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {
+        console.error('Error loading funds from storage:', e);
+      }
+    }
+    return INITIAL_FUND_TRANSACTIONS;
+  });
+
+  useEffect(() => {
+    safeLocalStorage.set('oto_fund_transactions', JSON.stringify(fundTransactions));
+  }, [fundTransactions]);
+
+  const [workshopLogs, setWorkshopLogs] = useState<WorkshopSafetyLog[]>(() => {
+    const saved = safeLocalStorage.get('oto_workshop_logs');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {
+        console.error('Error loading workshop logs from storage:', e);
+      }
+    }
+    return INITIAL_WORKSHOP_LOGS;
+  });
+
+  useEffect(() => {
+    safeLocalStorage.set('oto_workshop_logs', JSON.stringify(workshopLogs));
+  }, [workshopLogs]);
+
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+
+  // -------------------------------------------------------------
+  // BỘ TỰ ĐỘNG ĐỒNG BỘ CƠ SỞ DỮ LIỆU & LƯU VÀO GOOGLE DRIVE SAU 2 GIÂY
+  // -------------------------------------------------------------
+  const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState<boolean>(() => {
+    const saved = safeLocalStorage.get('oto_drive_auto_sync_enabled');
+    return saved !== null ? saved === 'true' : true; // Mặc định bật
+  });
+
+  const [autoSyncDebounceMs, setAutoSyncDebounceMs] = useState<number>(() => {
+    const saved = safeLocalStorage.get('oto_drive_auto_sync_debounce_ms');
+    return saved ? parseInt(saved, 10) || 2000 : 2000; // Mặc định 2 giây (2000ms)
+  });
+
+  const [autoSyncStatus, setAutoSyncStatus] = useState<'idle' | 'pending' | 'syncing' | 'synced' | 'local_saved' | 'error'>('idle');
+  const [autoSyncMessage, setAutoSyncMessage] = useState<string>('Sẵn sàng tự động lưu và đồng bộ Google Drive sau 2 giây khi có sửa đổi');
+  const [lastSyncTime, setLastSyncTime] = useState<string>(() => {
+    return safeLocalStorage.get('oto_drive_last_sync_time') || '';
+  });
+
+  const debounceTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const isInitialMount = React.useRef<boolean>(true);
+  const isSyncingRef = React.useRef<boolean>(false);
+
+  const executeAutoSync = async () => {
+    if (!isAutoSyncEnabled) return;
+    if (isSyncingRef.current) return;
+
+    if (!students || students.length === 0) {
+      setAutoSyncStatus('local_saved');
+      setAutoSyncMessage('🛡️ [Safety Guard]: Danh sách sinh viên trống, hệ thống giữ an toàn và không đẩy file rỗng lên Drive.');
+      return;
+    }
+
+    isSyncingRef.current = true;
+    setAutoSyncStatus('syncing');
+    setAutoSyncMessage('⚡ Đang tự động đồng bộ và lưu dữ liệu vào thư mục Google Drive...');
+
+    // Nếu chưa đăng nhập Google Drive thực tế, lưu dữ liệu cơ sở cục bộ an toàn
+    if (!googleDriveSyncService.isRealToken()) {
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+      setAutoSyncStatus('local_saved');
+      setAutoSyncMessage(`💾 Đã lưu dữ liệu cơ sở an toàn lúc ${timeStr} (Nhấn "SAO LƯU" đăng nhập Drive để tự động đẩy mây)`);
+      isSyncingRef.current = false;
+      return;
+    }
+
+    try {
+      const activeClassObj = classes.find(c => c.id === currentClass);
+      const className = activeClassObj?.name || 'Công nghệ Ô tô';
+      const teacherName = unitSettings?.advisorName || currentUser?.fullName || 'ThS. Nguyễn Chí Dũng';
+
+      const result = await googleDriveSyncService.syncClassDataToDrive(
+        currentClass,
+        className,
+        teacherName,
+        students,
+        grades,
+        attendance,
+        renLuyen,
+        fundTransactions,
+        workshopLogs,
+        unitSettings
+      );
+
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+      setLastSyncTime(timeStr);
+      safeLocalStorage.set('oto_drive_last_sync_time', timeStr);
+      setAutoSyncStatus('synced');
+      setAutoSyncMessage(`✅ Đã tự động lưu vào Google Drive lúc ${timeStr}`);
+    } catch (err: any) {
+      console.warn('Lỗi khi tự động đồng bộ Google Drive:', err);
+      setAutoSyncStatus('error');
+      setAutoSyncMessage(`⚠️ Lỗi tự động đẩy Drive: ${err?.message || 'Không thể kết nối'}. Dữ liệu đã lưu an toàn tại máy.`);
+    } finally {
+      isSyncingRef.current = false;
+    }
+  };
+
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+
+    if (!isAutoSyncEnabled) return;
+
+    setAutoSyncStatus('pending');
+    setAutoSyncMessage('⏳ Phát hiện thay đổi dữ liệu... Tự động lưu và đồng bộ sau 2 giây');
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    debounceTimerRef.current = setTimeout(() => {
+      executeAutoSync();
+    }, autoSyncDebounceMs); // 2000ms
+
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [
+    students,
+    grades,
+    attendance,
+    renLuyen,
+    fundTransactions,
+    workshopLogs,
+    classes,
+    unitSettings,
+    currentClass,
+    academicYear,
+    isAutoSyncEnabled,
+    autoSyncDebounceMs
+  ]);
+
+  const handleToggleAutoSync = (enabled: boolean) => {
+    setIsAutoSyncEnabled(enabled);
+    safeLocalStorage.set('oto_drive_auto_sync_enabled', String(enabled));
+    if (!enabled) {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      setAutoSyncStatus('idle');
+      setAutoSyncMessage('Đã tạm dừng tự động đồng bộ.');
+    } else {
+      setAutoSyncMessage('Đã bật tự động đồng bộ sau 2 giây.');
+    }
+  };
+
+  const handleSetDebounceMs = (ms: number) => {
+    setAutoSyncDebounceMs(ms);
+    safeLocalStorage.set('oto_drive_auto_sync_debounce_ms', String(ms));
+  };
+
+  const handleTriggerManualSync = () => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    executeAutoSync();
+  };
+
+  const autoSyncInfo: AutoSyncInfo = {
+    enabled: isAutoSyncEnabled,
+    debounceMs: autoSyncDebounceMs,
+    status: autoSyncStatus,
+    lastSyncTime,
+    syncMessage: autoSyncMessage,
+    onToggleAutoSync: handleToggleAutoSync,
+    onSetDebounceMs: handleSetDebounceMs,
+    onTriggerNow: handleTriggerManualSync
+  };
 
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
     try {
@@ -158,6 +492,7 @@ export default function App() {
   const [isCurriculumModalOpen, setIsCurriculumModalOpen] = useState(false);
   const [isQuickToolsOpen, setIsQuickToolsOpen] = useState(false);
   const [isDriveSyncOpen, setIsDriveSyncOpen] = useState(false);
+  const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
   const [selectedSystemForCurriculum, setSelectedSystemForCurriculum] = useState<string>('HỆ CAO ĐẲNG CHÍNH QUY');
 
   const handleAddStudent = (s: Student) => {
@@ -280,7 +615,16 @@ export default function App() {
   if (!currentUser) {
     return (
       <AuthLoginScreen
-        onLoginSuccess={setCurrentUser}
+        onLoginSuccess={(user) => {
+          setCurrentUser(user);
+          // Auto-load data from drive after login
+          googleDriveSyncService.verifySyncConsistency(currentClass).then(res => {
+            if (res.consistent) {
+              console.log('Đã đồng bộ consistency:', res.message);
+              // Lógica để tải dữ liệu (ví dụ: getOrCreateJsonBackup...)
+            }
+          }).catch(console.error);
+        }}
         users={users}
         onRegisterTeacher={(u) => setUsers(prev => [...prev, u])}
         classes={classes}
@@ -305,11 +649,13 @@ export default function App() {
           googleDriveSyncService.disconnectAccount();
         }}
         onOpenDriveSync={() => setIsDriveSyncOpen(true)}
+        onOpenPublishGuide={() => setIsPublishModalOpen(true)}
         onSwitchUserRole={(role) => {
           if (currentUser) {
             setCurrentUser({ ...currentUser, role });
           }
         }}
+        autoSyncInfo={autoSyncInfo}
       />
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
@@ -504,6 +850,15 @@ export default function App() {
           currentUser={currentUser}
           onUpdateCurrentUser={setCurrentUser}
           onImportData={handleImportData}
+          autoSyncInfo={autoSyncInfo}
+        />
+      )}
+
+      {isPublishModalOpen && (
+        <PublishGuideModal
+          isOpen={isPublishModalOpen}
+          onClose={() => setIsPublishModalOpen(false)}
+          appName={themeSettings?.systemTitle}
         />
       )}
         <Footer 

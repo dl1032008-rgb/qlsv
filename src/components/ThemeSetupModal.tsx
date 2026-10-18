@@ -12,9 +12,15 @@ import {
   Sparkles,
   Sliders,
   Eye,
-  Trash2
+  Trash2,
+  Loader2
 } from 'lucide-react';
 import { ThemeSettings, DEFAULT_THEME_SETTINGS } from '../types';
+import { 
+  optimizeImageFile, 
+  saveMediaToIndexedDB, 
+  deleteMediaFromIndexedDB 
+} from '../utils/mediaStorage';
 
 export const LOGO_PRESETS = [
   {
@@ -169,6 +175,9 @@ export const ThemeSetupModal: React.FC<ThemeSetupModalProps> = ({
   const [logoInputUrl, setLogoInputUrl] = useState('');
   const [bannerInputUrl, setBannerInputUrl] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isProcessingLogo, setIsProcessingLogo] = useState(false);
+  const [isProcessingBanner, setIsProcessingBanner] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bannerFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -176,58 +185,108 @@ export const ThemeSetupModal: React.FC<ThemeSetupModalProps> = ({
     if (isOpen) {
       setCurrentTheme(themeSettings);
       setErrorMessage(null);
+      setSuccessMessage(null);
     }
   }, [isOpen, themeSettings]);
 
   if (!isOpen) return null;
 
-  // Handle Logo File Upload
-  const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Logo File Upload with intelligent Canvas compression
+  const handleLogoFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        setErrorMessage('Vui lòng chọn tệp ảnh logo dung lượng dưới 2MB để đảm bảo hiệu năng lưu trữ.');
-        return;
-      }
-      setErrorMessage(null);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const result = event.target?.result as string;
-        setCurrentTheme(prev => ({ ...prev, logoUrl: result }));
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    // Reset input value so re-selecting same file works
+    e.target.value = '';
+
+    if (file.size > 15 * 1024 * 1024) {
+      setErrorMessage('Vui lòng chọn tệp ảnh logo dung lượng dưới 15MB.');
+      return;
+    }
+
+    setIsProcessingLogo(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      const optResult = await optimizeImageFile(file, {
+        maxWidth: 512,
+        maxHeight: 512,
+        quality: 0.9,
+        format: file.type === 'image/svg+xml' ? undefined : (file.type === 'image/png' ? 'image/png' : 'image/jpeg'),
+        preserveAlpha: true
+      });
+
+      setCurrentTheme(prev => ({ ...prev, logoUrl: optResult.dataUrl }));
+      await saveMediaToIndexedDB('theme_logo', optResult.dataUrl);
+
+      const kbBefore = Math.round(optResult.originalSizeBytes / 1024);
+      const kbAfter = Math.round(optResult.compressedSizeBytes / 1024);
+      setSuccessMessage(`✓ Đã tải & tối ưu Logo trường thành công (${kbBefore}KB → ${kbAfter}KB, ${optResult.dimensions.width}x${optResult.dimensions.height}px)!`);
+    } catch (err) {
+      console.error('Error optimizing logo:', err);
+      setErrorMessage('Không thể xử lý tệp ảnh. Vui lòng thử lại với tệp PNG, JPG, WebP hoặc SVG khác.');
+    } finally {
+      setIsProcessingLogo(false);
     }
   };
 
-  // Handle Banner File Upload
-  const handleBannerFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Banner File Upload with intelligent Canvas compression
+  const handleBannerFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 3 * 1024 * 1024) {
-        setErrorMessage('Vui lòng chọn tệp ảnh banner dung lượng dưới 3MB.');
-        return;
-      }
-      setErrorMessage(null);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const result = event.target?.result as string;
-        setCurrentTheme(prev => ({ ...prev, bannerUrl: result }));
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    e.target.value = '';
+
+    if (file.size > 20 * 1024 * 1024) {
+      setErrorMessage('Vui lòng chọn tệp ảnh banner dung lượng dưới 20MB.');
+      return;
+    }
+
+    setIsProcessingBanner(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      const optResult = await optimizeImageFile(file, {
+        maxWidth: 1600,
+        maxHeight: 700,
+        quality: 0.85,
+        format: 'image/jpeg',
+        preserveAlpha: false
+      });
+
+      setCurrentTheme(prev => ({ ...prev, bannerUrl: optResult.dataUrl }));
+      await saveMediaToIndexedDB('theme_banner', optResult.dataUrl);
+
+      const kbBefore = Math.round(optResult.originalSizeBytes / 1024);
+      const kbAfter = Math.round(optResult.compressedSizeBytes / 1024);
+      setSuccessMessage(`✓ Đã tải & tối ưu Banner xưởng thành công (${kbBefore}KB → ${kbAfter}KB, ${optResult.dimensions.width}x${optResult.dimensions.height}px)!`);
+    } catch (err) {
+      console.error('Error optimizing banner:', err);
+      setErrorMessage('Không thể xử lý tệp ảnh banner. Vui lòng thử lại với tệp PNG/JPG/WebP khác.');
+    } finally {
+      setIsProcessingBanner(false);
     }
   };
 
-  const handleApplyLogoUrl = () => {
+  const handleApplyLogoUrl = async () => {
     if (logoInputUrl.trim()) {
-      setCurrentTheme(prev => ({ ...prev, logoUrl: logoInputUrl.trim() }));
+      const url = logoInputUrl.trim();
+      setCurrentTheme(prev => ({ ...prev, logoUrl: url }));
+      await saveMediaToIndexedDB('theme_logo', url);
       setLogoInputUrl('');
+      setSuccessMessage('✓ Đã áp dụng đường dẫn Logo thành công!');
     }
   };
 
-  const handleApplyBannerUrl = () => {
+  const handleApplyBannerUrl = async () => {
     if (bannerInputUrl.trim()) {
-      setCurrentTheme(prev => ({ ...prev, bannerUrl: bannerInputUrl.trim() }));
+      const url = bannerInputUrl.trim();
+      setCurrentTheme(prev => ({ ...prev, bannerUrl: url }));
+      await saveMediaToIndexedDB('theme_banner', url);
       setBannerInputUrl('');
+      setSuccessMessage('✓ Đã áp dụng đường dẫn Banner ảnh bìa thành công!');
     }
   };
 
@@ -244,13 +303,33 @@ export const ThemeSetupModal: React.FC<ThemeSetupModalProps> = ({
     }));
   };
 
-  const handleResetToDefault = () => {
+  const handleResetToDefault = async () => {
     if (window.confirm('Khôi phục lại cấu hình giao diện mặc định ban đầu?')) {
       setCurrentTheme(DEFAULT_THEME_SETTINGS);
+      await deleteMediaFromIndexedDB('theme_logo');
+      await deleteMediaFromIndexedDB('theme_banner');
+      setSuccessMessage('✓ Đã khôi phục giao diện về mặc định ban đầu.');
     }
   };
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
+    // Lưu kiên cố vào IndexedDB
+    try {
+      if (currentTheme.logoUrl) {
+        await saveMediaToIndexedDB('theme_logo', currentTheme.logoUrl);
+      } else {
+        await deleteMediaFromIndexedDB('theme_logo');
+      }
+
+      if (currentTheme.bannerUrl) {
+        await saveMediaToIndexedDB('theme_banner', currentTheme.bannerUrl);
+      } else {
+        await deleteMediaFromIndexedDB('theme_banner');
+      }
+    } catch (e) {
+      console.warn('Media storage warning:', e);
+    }
+
     onSaveTheme(currentTheme);
     onClose();
   };
@@ -288,9 +367,19 @@ export const ThemeSetupModal: React.FC<ThemeSetupModalProps> = ({
         </div>
 
         {errorMessage && (
-          <div className="bg-red-50 border-b border-red-200 text-red-700 px-5 py-2.5 text-xs font-semibold flex items-center justify-between">
+          <div className="bg-red-50 border-b border-red-200 text-red-700 px-5 py-2.5 text-xs font-semibold flex items-center justify-between animate-in fade-in">
             <span>⚠️ {errorMessage}</span>
             <button onClick={() => setErrorMessage(null)} className="text-red-500 hover:text-red-800">✕</button>
+          </div>
+        )}
+
+        {successMessage && (
+          <div className="bg-emerald-50 border-b border-emerald-200 text-emerald-800 px-5 py-2.5 text-xs font-semibold flex items-center justify-between animate-in fade-in">
+            <span className="flex items-center gap-1.5">
+              <Check className="w-4 h-4 text-emerald-600 shrink-0 font-bold" />
+              {successMessage}
+            </span>
+            <button onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-900 font-bold">✕</button>
           </div>
         )}
 
@@ -395,8 +484,12 @@ export const ThemeSetupModal: React.FC<ThemeSetupModalProps> = ({
 
                 {currentTheme.logoUrl && (
                   <button
-                    onClick={() => setCurrentTheme(prev => ({ ...prev, logoUrl: '' }))}
-                    className="px-3 py-1.5 bg-rose-600/80 hover:bg-rose-600 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shrink-0 cursor-pointer"
+                    onClick={async () => {
+                      setCurrentTheme(prev => ({ ...prev, logoUrl: '' }));
+                      await deleteMediaFromIndexedDB('theme_logo');
+                      setSuccessMessage('✓ Đã khôi phục về Logo Gốc của hệ thống.');
+                    }}
+                    className="px-3 py-1.5 bg-rose-600/80 hover:bg-rose-600 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shrink-0 cursor-pointer transition active:scale-95"
                     title="Xóa logo tùy biến, quay về logo gốc"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -414,7 +507,7 @@ export const ThemeSetupModal: React.FC<ThemeSetupModalProps> = ({
                   Tải Tệp Ảnh Logo Từ Máy Tính (Quyền Quản Trị Viên)
                 </h4>
                 <p className="text-slate-500 text-xs mt-1 max-w-lg">
-                  Hỗ trợ định dạng <strong>SVG, PNG trong suốt, JPG, WebP</strong>. Tự động chuyển đổi và lưu vào hệ thống.
+                  Hỗ trợ định dạng <strong>SVG, PNG trong suốt, JPG, WebP</strong>. Tự động nén & tối ưu hóa để lưu trữ an toàn, không lo đầy bộ nhớ.
                 </p>
 
                 <input 
@@ -426,11 +519,21 @@ export const ThemeSetupModal: React.FC<ThemeSetupModalProps> = ({
                 />
 
                 <button
+                  disabled={isProcessingLogo}
                   onClick={() => fileInputRef.current?.click()}
-                  className="mt-3 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer active:scale-95 text-xs sm:text-sm"
+                  className="mt-3 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer active:scale-95 text-xs sm:text-sm"
                 >
-                  <Upload className="w-4 h-4" />
-                  Chọn Tệp Ảnh Logo Từ Máy Tính
+                  {isProcessingLogo ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Đang Tối Ưu & Nén Logo...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4" />
+                      <span>Chọn Tệp Ảnh Logo Từ Máy Tính</span>
+                    </>
+                  )}
                 </button>
               </div>
 
@@ -576,8 +679,12 @@ export const ThemeSetupModal: React.FC<ThemeSetupModalProps> = ({
 
                   {currentTheme.bannerUrl && (
                     <button
-                      onClick={() => setCurrentTheme(prev => ({ ...prev, bannerUrl: '' }))}
-                      className="px-3 py-1.5 bg-rose-600/90 hover:bg-rose-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer shrink-0"
+                      onClick={async () => {
+                        setCurrentTheme(prev => ({ ...prev, bannerUrl: '' }));
+                        await deleteMediaFromIndexedDB('theme_banner');
+                        setSuccessMessage('✓ Đã khôi phục về Đồ Họa 3D Cắt Bổ Kỹ Thuật mặc định.');
+                      }}
+                      className="px-3 py-1.5 bg-rose-600/90 hover:bg-rose-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer shrink-0 transition active:scale-95"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                       <span>Về Đồ Họa 3D</span>
@@ -596,13 +703,23 @@ export const ThemeSetupModal: React.FC<ThemeSetupModalProps> = ({
                   className="hidden" 
                 />
                 <button
+                  disabled={isProcessingBanner}
                   onClick={() => bannerFileInputRef.current?.click()}
-                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer text-xs sm:text-sm active:scale-95"
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer text-xs sm:text-sm active:scale-95"
                 >
-                  <Upload className="w-4 h-4" />
-                  Chọn Tệp Ảnh Bìa Từ Máy Tính
+                  {isProcessingBanner ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Đang Tối Ưu & Nén Banner...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4" />
+                      <span>Chọn Tệp Ảnh Bìa Từ Máy Tính</span>
+                    </>
+                  )}
                 </button>
-                <p className="text-slate-500 text-[11px] mt-2">Hỗ trợ ảnh JPG, PNG, WebP kích thước khuyến nghị 1200x500 px</p>
+                <p className="text-slate-500 text-[11px] mt-2">Hỗ trợ ảnh JPG, PNG, WebP mọi kích thước (tự động nén & tối ưu hóa mượt mà)</p>
               </div>
 
               {/* Banner Presets */}

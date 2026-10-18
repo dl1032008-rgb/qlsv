@@ -889,17 +889,21 @@ class GoogleDriveSyncService {
     const filteredAttendance = attendance.filter(a => classStudentIds.has(String(a.studentId).trim()));
     const filteredRenLuyen = renLuyen.filter(r => classStudentIds.has(String(r.studentId).trim()));
 
-    // Cơ chế thông minh: Kiểm tra chữ ký dữ liệu gọn nhẹ để tránh ghi lặp lại và chống quá tải localStorage
-    const lightweightSummary = {
+    // Cơ chế thông minh: Kiểm tra chữ ký dữ liệu chi tiết để phát hiện mọi thay đổi giá trị điểm số, chuyên cần, rèn luyện...
+    const dataSignature = JSON.stringify({
       classId,
-      studentIds: finalStudents.map(s => s.id),
+      studentsCount: finalStudents.length,
+      studentFingerprints: finalStudents.map(s => `${s.id}_${s.fullName}_${s.policy || ''}_${s.workshopGroup || ''}`),
       gradesCount: filteredGrades.length,
+      gradesTotal: filteredGrades.reduce((sum, g) => sum + (g.finalGrade10 || 0) + (g.finalGrade4 || 0), 0),
       attendanceCount: filteredAttendance.length,
+      attendanceFingerprint: filteredAttendance.slice(0, 50).map(a => `${a.studentId}_${a.status}_${a.date}`).join(';'),
       renLuyenCount: filteredRenLuyen.length,
+      renLuyenTotal: filteredRenLuyen.reduce((sum, r) => sum + (r.criteria1 || 0) + (r.criteria2 || 0) + (r.criteria3 || 0), 0),
       fundCount: fundTransactions.length,
+      fundTotal: fundTransactions.reduce((sum, f) => sum + (f.amount || 0), 0),
       workshopCount: workshopLogs.length
-    };
-    const dataSignature = JSON.stringify(lightweightSummary);
+    });
 
     const lastHashKey = `oto_sync_hash_${classId}`;
     let hasDataChanged = true;
@@ -1083,6 +1087,14 @@ class GoogleDriveSyncService {
     }
 
     // Tệp 8: JSON Snapshot hệ thống
+    let themeSettingsBackup = null;
+    try {
+      const savedTheme = localStorage.getItem('oto_app_theme_settings');
+      if (savedTheme) themeSettingsBackup = JSON.parse(savedTheme);
+    } catch {
+      // ignore
+    }
+
     const fullSnapshot = {
       system: 'Hệ thống Quản lý Sinh viên Điện tử - Khoa Công nghệ Ô tô',
       standard: 'Thông tư 04/2022/TT-BLĐTBXH & TT 17/2017/TT-BLĐTBXH & NĐ 238/2025/NĐ-CP',
@@ -1091,6 +1103,7 @@ class GoogleDriveSyncService {
       teacherName: teacherName || unitInfo?.advisorName || 'Giáo viên Chủ nhiệm',
       exportDate: new Date().toISOString(),
       unitInfo,
+      themeSettings: themeSettingsBackup,
       studentsCount: finalStudents.length,
       students: finalStudents,
       grades: filteredGrades,
@@ -1110,6 +1123,20 @@ class GoogleDriveSyncService {
 
     this.saveFileRegistry(classId, registry);
     localStorage.setItem(`oto_drive_urls_${classId}`, JSON.stringify(fileUrls));
+
+    // Đồng thời tự động cập nhật bản snapshot toàn hệ thống vào Thư Mục Gốc trên Google Drive
+    try {
+      const rootJsonBackup = await this.getOrCreateJsonBackup(
+        '08_DuLieu_SaoLuu_HeThong_TongHop.json',
+        rootFolder.id,
+        fullSnapshot
+      );
+      if (rootJsonBackup?.webViewLink) {
+        fileUrls['08_root_json'] = rootJsonBackup.webViewLink;
+      }
+    } catch (rootJsonErr) {
+      console.warn('Cảnh báo ghi snapshot thư mục gốc:', rootJsonErr);
+    }
 
     const statusMsg = hasDataChanged 
       ? `✅ [ĐỒNG BỘ THÀNH CÔNG]: Đã ghi nhận các thay đổi mới nhất của lớp ${classId} (${finalStudents.length} sinh viên) lên thư mục lớp "${classFolderName}" trên Google Drive thực tế!`

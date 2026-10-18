@@ -47,7 +47,7 @@ import {
   LogIn,
   Crown
 } from 'lucide-react';
-import { Student, StudentGrade, AttendanceRecord, RenLuyenCriteria, FundTransaction, WorkshopSafetyLog, UnitInfoSettings, UserAccount, ClassItem } from '../types';
+import { Student, StudentGrade, AttendanceRecord, RenLuyenCriteria, FundTransaction, WorkshopSafetyLog, UnitInfoSettings, UserAccount, ClassItem, AutoSyncInfo } from '../types';
 import { googleDriveSyncService } from '../services/googleDriveService';
 import { dataImportService, ParsedImportData } from '../services/dataImportService';
 
@@ -66,6 +66,7 @@ interface DriveSyncModalProps {
   onUpdateCurrentUser?: (user: UserAccount | null) => void;
   onImportData?: (parsed: ParsedImportData) => void;
   classes: ClassItem[];
+  autoSyncInfo?: AutoSyncInfo;
 }
 
 interface SheetFileItem {
@@ -92,7 +93,8 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
   currentUser,
   onUpdateCurrentUser,
   onImportData,
-  classes
+  classes,
+  autoSyncInfo
 }) => {
   if (!isOpen) return null;
 
@@ -1583,6 +1585,97 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
                   </button>
                 </div>
               )}
+              {/* KHỐI CƠ CHẾ TỰ ĐỘNG ĐỒNG BỘ CƠ SỞ DỮ LIỆU & LƯU VÀO GOOGLE DRIVE SAU 2 GIÂY */}
+              <div className="p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-sky-50 border-2 border-emerald-300 rounded-xl shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start sm:items-center gap-3">
+                    <div className="p-2.5 bg-gradient-to-br from-emerald-600 to-teal-700 text-white rounded-xl shadow-xs shrink-0">
+                      <RefreshCw className={`w-5 h-5 ${autoSyncInfo?.status === 'syncing' ? 'animate-spin' : ''}`} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="font-extrabold text-emerald-950 text-sm flex items-center gap-1.5">
+                          <Database className="w-4 h-4 text-emerald-700" />
+                          <span>Bộ Tự Động Đồng Bộ Dữ Liệu & Google Drive Sau 2 Giây</span>
+                        </h4>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                          autoSyncInfo?.status === 'pending'
+                            ? 'bg-amber-100 text-amber-900 border border-amber-400 animate-pulse'
+                            : autoSyncInfo?.status === 'syncing'
+                            ? 'bg-cyan-100 text-cyan-900 border border-cyan-400 animate-pulse'
+                            : autoSyncInfo?.status === 'synced'
+                            ? 'bg-emerald-100 text-emerald-900 border border-emerald-400'
+                            : autoSyncInfo?.status === 'error'
+                            ? 'bg-rose-100 text-rose-900 border border-rose-400'
+                            : 'bg-slate-100 text-slate-700 border border-slate-300'
+                        }`}>
+                          {autoSyncInfo?.status === 'pending'
+                            ? '⏳ Đang đếm ngược 2s để lưu'
+                            : autoSyncInfo?.status === 'syncing'
+                            ? '⚡ Đang tự động lưu Drive...'
+                            : autoSyncInfo?.status === 'synced'
+                            ? '✓ Đã đồng bộ Google Drive'
+                            : autoSyncInfo?.status === 'error'
+                            ? '⚠️ Cần kiểm tra kết nối'
+                            : '💾 Sẵn sàng tự động lưu'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 mt-1">
+                        {autoSyncInfo?.syncMessage || 'Cơ chế tự động: Khi chương trình có thay đổi dữ liệu, hệ thống tự động lưu cơ sở dữ liệu và đồng bộ vào thư mục Google Drive sau 2 giây (chống nghẽn và bảo vệ an toàn).'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                    <button
+                      onClick={() => {
+                        if (autoSyncInfo) {
+                          autoSyncInfo.onTriggerNow();
+                        } else {
+                          handlePerformSync('push');
+                        }
+                      }}
+                      disabled={autoSyncInfo?.status === 'syncing' || isSyncing}
+                      className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-lg shadow-xs flex items-center gap-1.5 text-xs transition cursor-pointer disabled:opacity-50"
+                      title="Kích hoạt lưu và đồng bộ lên Google Drive ngay lập tức"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${(autoSyncInfo?.status === 'syncing' || isSyncing) ? 'animate-spin' : ''}`} />
+                      <span>Lưu & Đồng Bộ Ngay</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3 pt-2.5 border-t border-emerald-200/70 flex flex-wrap items-center justify-between gap-3 text-[11px]">
+                  <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800 select-none">
+                    <input
+                      type="checkbox"
+                      checked={autoSyncInfo ? autoSyncInfo.enabled : autoPushOnChange}
+                      onChange={(e) => {
+                        setAutoPushOnChange(e.target.checked);
+                        autoSyncInfo?.onToggleAutoSync(e.target.checked);
+                      }}
+                      className="w-4 h-4 text-emerald-600 rounded cursor-pointer"
+                    />
+                    <span>Bật tự động lưu & đồng bộ vào thư mục Google Drive khi có thay đổi dữ liệu</span>
+                  </label>
+
+                  <div className="flex items-center gap-2 text-slate-600">
+                    <Clock className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Thời gian chờ đồng bộ:</span>
+                    <select
+                      value={autoSyncInfo?.debounceMs || 2000}
+                      onChange={(e) => autoSyncInfo?.onSetDebounceMs(Number(e.target.value))}
+                      className="px-2.5 py-1 bg-white border border-emerald-300 rounded text-slate-900 font-bold focus:outline-hidden text-xs"
+                    >
+                      <option value={1000}>1 giây (Nhanh)</option>
+                      <option value={2000}>2 giây (Chuẩn BLĐTBXH - Khuyên dùng)</option>
+                      <option value={3000}>3 giây</option>
+                      <option value={5000}>5 giây</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
               {/* Thư mục lưu trữ đích trên Google Drive */}
               <div className="p-3.5 bg-blue-50/60 border border-blue-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
@@ -2782,13 +2875,16 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
                         <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={autoPushOnChange}
-                            onChange={(e) => setAutoPushOnChange(e.target.checked)}
+                            checked={autoSyncInfo ? autoSyncInfo.enabled : autoPushOnChange}
+                            onChange={(e) => {
+                              setAutoPushOnChange(e.target.checked);
+                              autoSyncInfo?.onToggleAutoSync(e.target.checked);
+                            }}
                             className="w-4 h-4 text-emerald-600 rounded"
                           />
                           <div>
-                            <span className="font-bold text-slate-800 block text-xs">Tự động đẩy khi có thay đổi (Real-time Auto-Push)</span>
-                            <span className="text-[10px] text-slate-500">Ghi local và đẩy ngay snapshot lên Google Drive</span>
+                            <span className="font-bold text-slate-800 block text-xs">Tự động đẩy khi có thay đổi sau 2 giây (Real-time Auto-Push 2s)</span>
+                            <span className="text-[10px] text-slate-500">Tự động lưu cơ sở dữ liệu và đẩy lên Google Drive sau 2 giây khi có sửa đổi</span>
                           </div>
                         </label>
                       </div>

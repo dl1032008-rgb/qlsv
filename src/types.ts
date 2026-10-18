@@ -388,3 +388,15 @@ export interface SyncStatus {
   lastSync?: string;
   message?: string;
 }
+
+export interface AutoSyncInfo {
+  enabled: boolean;
+  debounceMs: number;
+  status: 'idle' | 'pending' | 'syncing' | 'synced' | 'local_saved' | 'error';
+  lastSyncTime: string;
+  syncMessage: string;
+  onToggleAutoSync: (enabled: boolean) => void;
+  onSetDebounceMs: (ms: number) => void;
+  onTriggerNow: () => void;
+}
+

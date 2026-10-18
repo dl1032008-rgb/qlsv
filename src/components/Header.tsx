@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { UserCheck, Shield, Phone, LogOut, Info, Settings, Sparkles, Palette, Users, KeyRound, ShieldAlert, Cloud } from 'lucide-react';
-import { ActiveTab, ThemeSettings, UserAccount } from '../types';
+import { UserCheck, Shield, Phone, LogOut, Info, Settings, Sparkles, Palette, Users, KeyRound, ShieldAlert, Cloud, Share2, Globe } from 'lucide-react';
+import { ActiveTab, ThemeSettings, UserAccount, AutoSyncInfo } from '../types';
 
 interface HeaderProps {
   activeTab: ActiveTab;
@@ -13,7 +13,9 @@ interface HeaderProps {
   onLogout?: () => void;
   pendingUsersCount?: number;
   onOpenDriveSync?: () => void;
+  onOpenPublishGuide?: () => void;
   onSwitchUserRole?: (role: 'admin' | 'teacher' | 'student') => void;
+  autoSyncInfo?: AutoSyncInfo;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -27,7 +29,9 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
   pendingUsersCount = 0,
   onOpenDriveSync,
-  onSwitchUserRole
+  onOpenPublishGuide,
+  onSwitchUserRole,
+  autoSyncInfo
 }) => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
@@ -113,16 +117,70 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Right: User Pill Badge & Exit/Close Button */}
           <div className="flex items-center gap-2">
-            {/* Nút SAO LƯU ĐỒNG BỘ: CHỈ HIỂN THỊ CHO ADMIN (Giao diện người dùng và Sinh viên đều ẩn) */}
+            {/* Nút SAO LƯU & XUẤT BẢN: CHỈ HIỂN THỊ CHO ADMIN (Giao diện người dùng và Sinh viên đều ẩn) */}
             {currentUser?.role === 'admin' && (
-              <button
-                onClick={onOpenDriveSync}
-                className="flex items-center gap-1.5 bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-700 hover:from-teal-500 hover:to-emerald-500 border border-teal-300/50 text-white font-extrabold rounded-full px-3.5 py-1.5 text-xs shadow-md hover:shadow-lg transition cursor-pointer select-none active:scale-95 shrink-0"
-                title="Mục SAO LƯU: Đồng bộ Google Drive & Google Sheets của Admin"
-              >
-                <Cloud className="w-3.5 h-3.5 text-yellow-300 animate-pulse" />
-                <span className="tracking-wide text-yellow-200">SAO LƯU</span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={onOpenDriveSync}
+                  className="flex items-center gap-1.5 bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-700 hover:from-teal-500 hover:to-emerald-500 border border-teal-300/50 text-white font-extrabold rounded-full px-3.5 py-1.5 text-xs shadow-md hover:shadow-lg transition cursor-pointer select-none active:scale-95 shrink-0"
+                  title="Mục SAO LƯU: Đồng bộ Google Drive & Google Sheets của Admin"
+                >
+                  <Cloud className={`w-3.5 h-3.5 text-yellow-300 ${autoSyncInfo?.status === 'syncing' ? 'animate-spin text-cyan-200' : autoSyncInfo?.status === 'pending' ? 'animate-bounce text-amber-300' : 'animate-pulse'}`} />
+                  <span className="tracking-wide text-yellow-200">SAO LƯU</span>
+                </button>
+
+                {/* Nút XUẤT BẢN & CHIA SẺ (100% MIỄN PHÍ - KHÔNG CẦN HÓA ĐƠN) */}
+                <button
+                  onClick={onOpenPublishGuide}
+                  className="flex items-center gap-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-600 hover:from-blue-500 hover:to-indigo-500 border border-blue-300/50 text-white font-extrabold rounded-full px-3 py-1.5 text-xs shadow-md hover:shadow-lg transition cursor-pointer select-none active:scale-95 shrink-0"
+                  title="Xuất bản & Lấy link chia sẻ miễn phí 100% không cần hóa đơn"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-yellow-300" />
+                  <span className="tracking-wide text-yellow-200">XUẤT BẢN</span>
+                </button>
+
+                {/* Live Auto Sync 2s Status Pill */}
+                {autoSyncInfo && (
+                  <button
+                    onClick={onOpenDriveSync}
+                    title={`${autoSyncInfo.syncMessage} (Nhấn để mở Cấu hình Đồng bộ)`}
+                    className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition shadow-xs cursor-pointer select-none active:scale-95 ${
+                      autoSyncInfo.status === 'pending'
+                        ? 'bg-amber-400/20 text-amber-200 border-amber-300/60 animate-pulse'
+                        : autoSyncInfo.status === 'syncing'
+                        ? 'bg-cyan-500/20 text-cyan-200 border-cyan-300/60 animate-pulse'
+                        : autoSyncInfo.status === 'synced'
+                        ? 'bg-emerald-500/20 text-emerald-200 border-emerald-300/60'
+                        : autoSyncInfo.status === 'error'
+                        ? 'bg-rose-500/25 text-rose-200 border-rose-300/60'
+                        : 'bg-black/25 text-slate-300 border-white/20'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${
+                      autoSyncInfo.status === 'pending'
+                        ? 'bg-amber-400 animate-ping'
+                        : autoSyncInfo.status === 'syncing'
+                        ? 'bg-cyan-300 animate-ping'
+                        : autoSyncInfo.status === 'synced'
+                        ? 'bg-emerald-400'
+                        : autoSyncInfo.status === 'error'
+                        ? 'bg-rose-400'
+                        : 'bg-slate-400'
+                    }`} />
+                    <span className="truncate max-w-[130px]">
+                      {autoSyncInfo.status === 'pending'
+                        ? '⏳ Lưu sau 2s...'
+                        : autoSyncInfo.status === 'syncing'
+                        ? '⚡ Lưu Drive...'
+                        : autoSyncInfo.status === 'synced'
+                        ? `✓ Drive ${autoSyncInfo.lastSyncTime || 'đã lưu'}`
+                        : autoSyncInfo.status === 'error'
+                        ? '⚠️ Lỗi Drive'
+                        : '💾 Đã lưu cục bộ'}
+                    </span>
+                  </button>
+                )}
+              </div>
             )}
 
             {/* User Badge: (AD/GV/SV) Name v */}
@@ -222,6 +280,17 @@ export const Header: React.FC<HeaderProps> = ({
                     >
                       <Palette className="w-4 h-4 text-teal-600" />
                       <span>Setup Giao Diện Admin (Logo, Màu, Banner)</span>
+                    </button>
+                  )}
+
+                  {/* Nút XUẤT BẢN & CHIA SẺ MIỄN PHÍ: HIỂN THỊ CHO ADMIN */}
+                  {currentUser?.role === 'admin' && onOpenPublishGuide && (
+                    <button 
+                      onClick={() => { onOpenPublishGuide(); setShowUserMenu(false); }}
+                      className="w-full text-left px-4 py-2 hover:bg-blue-50 flex items-center gap-2 text-blue-900 font-bold border-b border-slate-100"
+                    >
+                      <Share2 className="w-4 h-4 text-blue-600" />
+                      <span>Xuất Bản & Chia Sẻ (Miễn Phí 100%)</span>
                     </button>
                   )}
 
